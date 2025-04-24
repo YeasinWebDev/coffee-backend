@@ -1,4 +1,4 @@
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -54,6 +54,7 @@ async function run() {
     await client.connect();
     db = client.db("coffeeShop");
     let usersCollection = db.collection("users");
+    let dataCollection = db.collection("data")
     console.log("Successfully connected to MongoDB!");
 
     app.post("/register", async (req, res) => {
@@ -122,6 +123,27 @@ async function run() {
         res.status(500).json({ message: "Internal server error" });
       }
     });
+
+    app.get('/products', async (req,res) => {
+      const searchText = req.query.search || ''
+      let data
+      if(searchText !== ''){
+       data = await dataCollection.find({ name: { $regex: searchText ,$options: 'i'} }).toArray()
+      }else{
+        data = await dataCollection.find().toArray()
+      }
+      res.send(data)
+    })
+
+    app.get('/product/:id', async (req,res) => {
+      const id = req.params.id
+      console.log(id)
+      const query = {_id: new ObjectId(id)}
+      const result = await dataCollection.findOne(query)
+      res.send(result)
+    })
+
+
 
     await client.db("admin").command({ ping: 1 });
   } finally {
