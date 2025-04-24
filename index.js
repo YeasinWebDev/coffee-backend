@@ -7,7 +7,6 @@ const cookieParser = require("cookie-parser");
 const bcrypt = require("bcrypt");
 const PORT = process.env.PORT || 8000;
 
-
 const app = express();
 app.use(cookieParser());
 app.use(express.json());
@@ -54,7 +53,9 @@ async function run() {
     await client.connect();
     db = client.db("coffeeShop");
     let usersCollection = db.collection("users");
-    let dataCollection = db.collection("data")
+    let dataCollection = db.collection("data");
+    let favoriteCollection = db.collection("favorite");
+
     console.log("Successfully connected to MongoDB!");
 
     app.post("/register", async (req, res) => {
@@ -92,13 +93,13 @@ async function run() {
       );
       res
         .status(201)
-        .json({ token, user: { id: result.insertedId, email, name,image } });
+        .json({ token, user: { id: result.insertedId, email, name, image } });
     });
-    
+
     app.post("/login", async (req, res) => {
       try {
         const { email, password } = req.body;
-        
+
         // Find user in database
         const user = await usersCollection.findOne({ email });
         if (!user) {
@@ -109,41 +110,81 @@ async function run() {
         if (!passwordMatch) {
           return res.status(401).json({ message: "Invalid credentials" });
         }
-    
+
         const token = jwt.sign(
           { id: user._id, email: user.email },
           process.env.JWT_SECRET,
           { expiresIn: "7d" }
         );
 
-        res.status(200).json({user,token});
-    
+        res.status(200).json({ user, token });
       } catch (error) {
         console.error("Login error:", error);
         res.status(500).json({ message: "Internal server error" });
       }
     });
 
-    app.get('/products', async (req,res) => {
-      const searchText = req.query.search || ''
-      let data
-      if(searchText !== ''){
-       data = await dataCollection.find({ name: { $regex: searchText ,$options: 'i'} }).toArray()
-      }else{
-        data = await dataCollection.find().toArray()
+    app.get("/products", async (req, res) => {
+      const searchText = req.query.search || "";
+      let data;
+      if (searchText !== "") {
+        data = await dataCollection
+          .find({ name: { $regex: searchText, $options: "i" } })
+          .toArray();
+      } else {
+        data = await dataCollection.find().toArray();
       }
-      res.send(data)
-    })
+      res.send(data);
+    });
 
-    app.get('/product/:id', async (req,res) => {
-      const id = req.params.id
-      console.log(id)
-      const query = {_id: new ObjectId(id)}
-      const result = await dataCollection.findOne(query)
-      res.send(result)
-    })
+    app.get("/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await dataCollection.findOne(query);
+      res.send(result);
+    });
 
+    app.post("/favorite", async (req, res) => {
+      const { productId, user } = req.body;
 
+      try {
+        const userFavorite = await favoriteCollection.findOne({ user });
+
+        if (userFavorite) {
+          const alreadyFavorited = userFavorite.productIds.includes(productId);
+
+          if (alreadyFavorited) {
+            const updated = await favoriteCollection.updateOne(
+              { user },
+              { $pull: { productIds: productId } }
+            );
+            return res.send({ status: "removed" });
+          } else {
+            // Add the productId
+            const updated = await favoriteCollection.updateOne(
+              { user },
+              { $push: { productIds: productId } }
+            );
+            return res.send({ status: "added"});
+          }
+        } else {
+          const result = await favoriteCollection.insertOne({
+            user,
+            productIds: [productId],
+          });
+          return res.send({status: "added"});
+        }
+      } catch (error) {
+        console.error("Error toggling favorite:", error);
+        res.status(500).send({ error: "Internal server error" });
+      }
+    });
+
+    app.post("/isfavorite", async (req, res) => {
+      const {user,productId} = req.body
+      const result = await favoriteCollection.findOne({ user ,  productIds:productId });
+      res.send({isFavorited: !!result});
+    });
 
     await client.db("admin").command({ ping: 1 });
   } finally {
